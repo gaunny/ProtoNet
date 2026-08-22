@@ -1,0 +1,29 @@
+# ============================================================================
+# Code Release
+# Pinned, mutually-compatible dependencies (verified to import cleanly together).
+# Install with:  pip install -r requirements.txt
+# ============================================================================
+
+# ---- Scientific / ML stack ---- (versions match the environment that produced
+# the reported results; CPU-only torch is sufficient for the experiments)
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.6.1
+scipy==1.15.3
+torch==2.7.1
+tenacity==8.2.2
+
+# ---- RAG / report generation ----
+# IMPORTANT: this project was written against the langchain 0.3-era API, which
+# still exposes `from langchain.chat_models import init_chat_model`. Do NOT mix
+# in langchain >= 1.0 (the meta `langchain` package was split and that import
+# path was removed). The set below is self-consistent.
+langchain==0.3.7
+langchain-core==0.3.63
+langchain-openai==0.2.14
+langchain-community==0.3.7
+langchain-text-splitters==0.3.8
+faiss-cpu==1.11.0
+
+# ---- Doc / utility (helper & release scripts) ----
+python-docx==1.2.0

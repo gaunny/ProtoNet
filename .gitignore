@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Runtime outputs (created by the pipeline; do not commit)
+experiments/
+example_reports_output/
+
+# macOS
+.DS_Store
