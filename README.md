@@ -35,15 +35,16 @@ Leak-free, no test leakage:
 - **Preprocessing.** The training pool is NOT pre-harmonized; harmonization
   happens strictly inside each cross-validation fold. Within each fold, an
   empirical-Bayes ComBat (Johnson et al., 2007) is fit on that fold's inner-
-  training partition using the 8-site batch label (`site` 0 = cohort A, 1..7 =
-  the seven sub-centres of cohort B) with age and sex as biological covariates,
-  and applied to the fold's validation and test partitions, so no validation or
-  test subject contributes to the harmonization parameters. MMSE is excluded
-  from the harmonization covariates and is used only as a clinical modeling
-  feature downstream. Then `SelectKBest(150)` -> `VIF(10)` -> `StandardScaler`,
-  all fit only on the inner-training subset. For the external cohort, a ComBat
-  fit on the complete training pool (A + B) is applied as a frozen transform;
-  the external cohort never participates in parameter estimation.
+  training partition using the 8-site batch label (`site` 0 = cohort A as the
+  reference batch, 1..7 = the seven sub-centres of cohort B) with age and sex
+  as biological covariates, and applied to the fold's validation and test
+  partitions, so no validation or test subject contributes to the harmonization
+  parameters. MMSE is excluded from the harmonization covariates and is used
+  only as a clinical modeling feature downstream. Then `SelectKBest(150)` ->
+  `VIF(10)` -> `StandardScaler`, all fit only on the inner-training subset. For
+  the external cohort, a ComBat fit on the complete training pool (A + B) is
+  applied as a frozen transform; the external cohort never participates in
+  parameter estimation.
 - **Split.** Outer 5-fold x 3 seeds (42/123/2024) = 15 runs; exact 60/20/20
   train/validation/test per fold; validation-based early stopping.
 - **Model.** ProtoNet, 64-d latent encoder, prototypes `[1,2,1]` (HC, MCI, AD),

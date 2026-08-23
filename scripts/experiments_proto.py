@@ -221,10 +221,12 @@ def combat_harmonize_imaging(X_fit, site_fit, age_fit, male_fit,
                              X_apply, site_apply, age_apply, male_apply):
     """Leak-free empirical-Bayes ComBat on imaging features only.
 
-    Fit ComBat on the training imaging block ``X_fit`` using the ``site`` batch
-    label (0 = cohort A, 1..7 = cohort B sub-centres) and age/sex covariates; then
-    register ``X_apply`` (a validation / test partition) to the SAME reference.
-    The apply block never informs the fit, so there is no test leakage.
+    Fit ComBat on the training imaging block ``X_fit`` using the 8-site batch
+    label (0 = ADNI as the reference, 1..7 = MCADI sub-centres) and age/sex
+    covariates; then harmonize ``X_apply`` (the training block itself, a
+    validation or a test partition) with the fitted per-batch parameters,
+    mapping every sample onto the ADNI reference scale. The apply block never
+    informs the fit, so there is no test leakage.
 
     Returns the harmonized ``X_apply`` (np.ndarray, same shape).
     """
@@ -236,11 +238,14 @@ def combat_harmonize_imaging(X_fit, site_fit, age_fit, male_fit,
     harm.fit(pd.DataFrame(np.asarray(X_fit, float), columns=cols),
              batch=np.asarray(site_fit).astype(int),
              covariates=pd.DataFrame({"age": np.asarray(age_fit, float),
-                                      "male": np.asarray(male_fit, float)}))
+                                      "male": np.asarray(male_fit, float)}),
+             ref_batch=0)
     d = pd.DataFrame(np.asarray(X_apply, float), columns=cols)
-    h = harm.transform(d, covariates_ext=pd.DataFrame({
-        "age": np.asarray(age_apply, float),
-        "male": np.asarray(male_apply, float)})).values
+    h = harm.transform(d,
+                       batch=np.asarray(site_apply).astype(int),
+                       covariates_ext=pd.DataFrame({
+                           "age": np.asarray(age_apply, float),
+                           "male": np.asarray(male_apply, float)})).values
     return h
 
 

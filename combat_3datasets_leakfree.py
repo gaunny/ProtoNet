@@ -66,14 +66,16 @@ def load_and_harmonize(root, out, train_a, train_b, external, external_labels):
     train_pool = pd.concat([cohort_a_c, cohort_b_c], ignore_index=True)
 
     # ---- External alignment: ComBat FIT on the full training pool only ----
-    # The external cohort is transformed by parameters estimated exclusively on
-    # the training cohorts (A + B, with age/sex covariates); the external cohort
-    # never participates in parameter estimation (frozen, leak-free transform).
+    # 8-site batch label (site 0 = ADNI as the reference, 1..7 = MCADI
+    # sub-centres) with age/sex covariates. The external cohort is transformed
+    # with the fitted per-batch parameters and mapped onto the ADNI reference;
+    # it never participates in parameter estimation (frozen, leak-free).
     harmonizer = ComBatHarmonizer()
     harmonizer.fit(
         train_pool[common],
-        batch=np.concatenate([np.zeros(len(cohort_a_c)), np.ones(len(cohort_b_c))]).astype(int),
+        batch=train_pool["site"].values.astype(int),
         covariates=train_pool[["age", "male"]],
+        ref_batch=0,
     )
     ext_h = harmonizer.transform(ext_c[common], covariates_ext=ext_c[["age", "male"]])
     ext_c[common] = ext_h.values
