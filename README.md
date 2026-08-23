@@ -32,13 +32,18 @@ code_release/
 
 Leak-free, no test leakage:
 
-- **Preprocessing.** A global ComBat is fit on the two training cohorts (A and
-  B, age/sex covariates) and applied as a fixed transform to the held-out
-  external cohort. Within each CV fold, a second per-fold ComBat is fit on the
-  fold's training partition using the site batch label (`site` 0 = cohort A,
-  1..7 = the seven sub-centres of cohort B) and applied to the fold's
-  validation and test partitions. Then `SelectKBest(150)` -> `VIF(10)` ->
-  `StandardScaler`, all fit only on the inner-training subset.
+- **Preprocessing.** The training pool is NOT pre-harmonized; harmonization
+  happens strictly inside each cross-validation fold. Within each fold, an
+  empirical-Bayes ComBat (Johnson et al., 2007) is fit on that fold's inner-
+  training partition using the 8-site batch label (`site` 0 = cohort A, 1..7 =
+  the seven sub-centres of cohort B) with age and sex as biological covariates,
+  and applied to the fold's validation and test partitions, so no validation or
+  test subject contributes to the harmonization parameters. MMSE is excluded
+  from the harmonization covariates and is used only as a clinical modeling
+  feature downstream. Then `SelectKBest(150)` -> `VIF(10)` -> `StandardScaler`,
+  all fit only on the inner-training subset. For the external cohort, a ComBat
+  fit on the complete training pool (A + B) is applied as a frozen transform;
+  the external cohort never participates in parameter estimation.
 - **Split.** Outer 5-fold x 3 seeds (42/123/2024) = 15 runs; exact 60/20/20
   train/validation/test per fold; validation-based early stopping.
 - **Model.** ProtoNet, 64-d latent encoder, prototypes `[1,2,1]` (HC, MCI, AD),
@@ -59,7 +64,7 @@ Leak-free, no test leakage:
 | `scripts/confusion_matrix.py` | Pooled out-of-fold three-class confusion matrix. |
 | `scripts/experiments_proto.py` | Shared architecture / data loading / training utilities. |
 | `scripts/proto_vif_clean.py` | VIF filtering + main-config evaluation (3-class matches `final_compare.py`; its 2-class is the P(AD) marginalization of the 3-class model). |
-| `combat_3datasets_leakfree.py`, `combat_harmonizer.py` | Leak-free ComBat (fit training cohorts with covariates -> transform external cohort). |
+| `combat_3datasets_leakfree.py`, `combat_harmonizer.py` | Data assembly + leak-free external alignment: assembles the RAW training pool (no global ComBat; harmonization is done per-fold inside the nested CV) and applies a ComBat transform to the external cohort using parameters estimated exclusively on the training pool (frozen, leak-free). |
 | `prototype_rag.py` | RAG report generator: embedding + FAISS retrieval, LLM report synthesis with inline PubMed citations (metadata resolved from PMIDs via NCBI E-utilities `esummary`). |
 
 ## Dependencies
@@ -91,12 +96,15 @@ Clinical columns (`age`/`male`/`MMSE`/`site`/`label`/`mci_subtype`) are never
 harmonized. `site` is mandatory in the training cohorts (per-fold ComBat batch
 label); `age`/`male` are the ComBat covariates.
 
-Step 1 of the pipeline writes the harmonized inputs consumed by the remaining
-steps to `${DATA_ROOT}/experiments/`:
+Step 1 of the pipeline writes two files to `${DATA_ROOT}/experiments/`:
 
-- `train_features.csv` — harmonized training pool (`site` preserved).
-- `external_features.csv` — harmonized external cohort (`label`/`mci_subtype`
-  merged in).
+- `train_features.csv` — the column-aligned RAW training pool (`site`
+  preserved). It is intentionally NOT pre-harmonized; harmonization of the
+  training cohorts is performed per-fold inside the nested CV
+  (`experiments_proto.build_fold`).
+- `external_features.csv` — the external cohort transformed by ComBat
+  parameters estimated exclusively on the training pool (frozen, leak-free);
+  `label`/`mci_subtype` are merged in here.
 
 All outputs are written to `${DATA_ROOT}/experiments/`.
 
@@ -107,7 +115,7 @@ the full option list). The harmonizer is the entry point that produces the
 harmonized tables for the rest of the pipeline:
 
 ```bash
-# 1. Harmonization (your data in):
+# 1. Data assembly + external alignment (your data in):
 python combat_3datasets_leakfree.py \
     --train-a cohort_a.csv --train-b cohort_b.csv \
     --external external.csv --external-labels external_labels.csv

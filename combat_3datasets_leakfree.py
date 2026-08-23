@@ -1,22 +1,25 @@
 """
 combat_3datasets_leakfree.py
 ============================
-Leak-free multi-cohort ComBat harmonization for the AD / MCI framework.
+Data assembly and leak-free external alignment for the AD / MCI framework.
 
 Design (no leakage):
-  * ComBat is FIT only on the two training cohorts (A: single-site,
-    B: multi-site).
-  * Biological covariates (age, sex) are preserved during harmonization.
-  * The fitted (reference) parameters are applied to the external cohort
-    via `transform`, which never participates in parameter estimation ->
-    the external cohort stays fully held out.
+  * The training pool (cohorts A + B) is written out column-aligned but NOT
+    harmonized: harmonization of the training cohorts is performed strictly
+    inside each cross-validation fold (per-fold ComBat in
+    experiments_proto.build_fold), so no fold validation/test subject ever
+    contributes to a harmonization used on itself.
+  * For the external cohort, ComBat is FIT only on the two training cohorts
+    (A: single-site, B: multi-site) with age and sex as biological
+    covariates, and the fitted parameters are applied to the external cohort
+    via `transform`, which never participates in parameter estimation.
   * ComBat is applied ONLY to imaging / DTI features. Clinical / demographic
     variables (MMSE, age, sex) are NOT harmonized because they are not
     site-affected scanner measurements.
 
 The empirical-Bayes ComBat implementation lives in `combat_harmonizer.py`
-(ComBatHarmonizer). This script only orchestrates the data loading and the
-fit-on-training / transform-external flow.
+(ComBatHarmonizer). This script only orchestrates the data loading, the
+training-pool assembly, and the fit-on-training / transform-external flow.
 
 Usage:
     python combat_3datasets_leakfree.py --root <DATA_DIR> \
@@ -54,20 +57,25 @@ def load_and_harmonize(root, out, train_a, train_b, external, external_labels):
     cohort_b_c = cohort_b[common + keep(cohort_b)].copy()
     ext_c = ext[common + keep(ext)].copy()
 
-    # ---- ComBat FIT on the training cohorts (A + B) with covariates age, sex ----
+    # ---- Training pool: column-aligned RAW pool (NO global ComBat) ----
+    # The harmonization of the training cohorts is performed strictly inside
+    # each cross-validation fold (per-fold ComBat in experiments_proto.build_fold),
+    # so the training table must NOT be pre-harmonized here; otherwise the fold
+    # validation/test subjects would have contributed to the harmonization
+    # parameters before the split (information leakage in the nested CV).
     train_pool = pd.concat([cohort_a_c, cohort_b_c], ignore_index=True)
+
+    # ---- External alignment: ComBat FIT on the full training pool only ----
+    # The external cohort is transformed by parameters estimated exclusively on
+    # the training cohorts (A + B, with age/sex covariates); the external cohort
+    # never participates in parameter estimation (frozen, leak-free transform).
     harmonizer = ComBatHarmonizer()
     harmonizer.fit(
         train_pool[common],
         batch=np.concatenate([np.zeros(len(cohort_a_c)), np.ones(len(cohort_b_c))]).astype(int),
         covariates=train_pool[["age", "male"]],
     )
-
-    # ---- Transform training + external cohort using the SAME fitted parameters ----
-    train_h = harmonizer.transform(train_pool[common], covariates_ext=train_pool[["age", "male"]])
     ext_h = harmonizer.transform(ext_c[common], covariates_ext=ext_c[["age", "male"]])
-
-    train_pool[common] = train_h.values
     ext_c[common] = ext_h.values
 
     # Attach external clinical labels from the labeled file (not used for
@@ -82,27 +90,29 @@ def load_and_harmonize(root, out, train_a, train_b, external, external_labels):
                 ext_c[base] = ext_c[base].fillna(ext_c[src])
                 ext_c = ext_c.drop(columns=[src])
 
-    # Modeling feature set: harmonized imaging/DTI + clinical MMSE + demographics.
+    # Modeling feature set: imaging/DTI + clinical MMSE + demographics.
     model_feats = [c for c in (list(common) + ["MMSE", "age", "male"])
                    if c in train_pool.columns]
 
     os.makedirs(out, exist_ok=True)
     # Downstream scripts read these exact names:
-    #   * experiments_proto.load_data  -> train_features.csv
+    #   * experiments_proto.load_data  -> train_features.csv (RAW, not harmonized)
     #   * external_validation.py       -> train_features.csv + external_features.csv
-    # The `site` column (0 = cohort A, 1..7 = cohort B sub-centres) is preserved
-    # in train_features.csv so the nested-CV can apply the per-fold ComBat.
+    # train_features.csv is the column-aligned RAW training pool; harmonization
+    # happens per-fold inside the nested CV (experiments_proto.build_fold). The
+    # `site` column (0 = cohort A, 1..7 = cohort B sub-centres) is preserved so
+    # the nested-CV can apply the per-fold ComBat.
     train_path = os.path.join(out, "train_features.csv")
     ext_path = os.path.join(out, "external_features.csv")
     train_pool.to_csv(train_path, index=False)
     ext_c.to_csv(ext_path, index=False)
 
-    print(f"[combat] common imaging/DTI features : {len(common)}")
-    print(f"[combat] model features (incl. MMSE/age/sex) : {len(model_feats)}")
-    print(f"[combat] train_pool shape : {train_pool.shape}")
-    print(f"[combat] external shape  : {ext_c.shape}")
-    print(f"[combat] wrote {train_path}")
-    print(f"[combat] wrote {ext_path}")
+    print(f"[data] common imaging/DTI features : {len(common)}")
+    print(f"[data] model features (incl. MMSE/age/sex) : {len(model_feats)}")
+    print(f"[data] train_pool (RAW, not harmonized) : {train_pool.shape}")
+    print(f"[data] external (ComBat transform, leak-free) : {ext_c.shape}")
+    print(f"[data] wrote {train_path}")
+    print(f"[data] wrote {ext_path}")
     return train_pool, ext_c, model_feats
 
 
