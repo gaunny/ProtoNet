@@ -398,6 +398,25 @@ def generate_markdown_reports(
             idx = proto.get("prototype_index")
             proto_descs.append(f"Prototype {idx} (class {proto.get('class')})")
 
+        # Prototype distance modulates the retrieval breadth. A sample far from
+        # its closest prototype is atypical, so the search window is widened and
+        # differential-diagnosis semantics are added to the query. The distance
+        # itself is never written into the generated report.
+        proto_dist = None
+        _closest = sample.get("closest_prototypes") or []
+        if _closest:
+            try:
+                proto_dist = float(_closest[0].get("distance"))
+            except (TypeError, ValueError):
+                proto_dist = None
+        retrieval_top_k, retrieval_initial_k = 5, 20
+        atypical = False
+        if proto_dist is not None:
+            scale = min(2.0, 1.0 + proto_dist / 8.0)  # d=0 -> 1.0x, d>=8 -> 2.0x
+            retrieval_top_k = int(round(5 * scale))
+            retrieval_initial_k = int(round(20 * scale))
+            atypical = proto_dist > 5.0
+
         # Literature retrieval.
         query = (
             f"Alzheimer's risk explanation. Age {age}, Sex {sex}, MMSE {mmse}. "
@@ -405,6 +424,7 @@ def generate_markdown_reports(
             f"White matter features: {', '.join(k for k, _ in white_matter_features)}. "
             f"Prototypes: {' '.join(proto_descs)}. "
             + (f"Disease severity score: {severity_score:.3f} (0=HC, 1=MCI, 2=AD). " if severity_score is not None else "")
+            + ("Atypical presentation; consider differential diagnosis and disease heterogeneity." if atypical else "")
         )
         try:
             emb = get_embeddings(query, embeddings)
@@ -413,13 +433,13 @@ def generate_markdown_reports(
                 emb=emb,
                 imaging_keywords=imaging_keywords,
                 feature_keywords=[k.lower() for k, _ in brain_volume_features] + [k.lower() for k, _ in white_matter_features],
-                top_k=5,
-                initial_k=20,
+                top_k=retrieval_top_k,
+                initial_k=retrieval_initial_k,
                 max_expand_k=200
             )
 
             candidates = sorted(candidates, key=lambda x: float(x.metadata.get("similarity", 0) or 0), reverse=True)
-            docs = select_diversified_from_candidates(candidates, top_k=5)
+            docs = select_diversified_from_candidates(candidates, top_k=retrieval_top_k)
 
             cited_literature = []
             seen_pmids = set()
