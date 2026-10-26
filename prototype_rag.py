@@ -327,7 +327,7 @@ def generate_markdown_reports(
 
     # Language model and embedding setup.
     llm = init_chat_model("gpt-5.6", model_provider="openai",
-                          temperature=0.7, top_p=1.0, max_tokens=1024)
+                          temperature=0.7, top_p=1.0, max_tokens=4096)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
     # The PubMed FAISS index is not distributed with the code (its abstracts are
